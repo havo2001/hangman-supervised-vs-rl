@@ -6,3 +6,5 @@ data/dataset.npz
 __pycache__/
 
 .DS_Store
+
+model/checkpoint/
