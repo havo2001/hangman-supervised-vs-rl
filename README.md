@@ -5,16 +5,17 @@ Train a Transformer that can guess the next letter in any partially-revealed Han
 2. Then I train a CNN-transformer on this dataset.
 
 ```
-python create_training_examples.py \
---file data/train_data.txt \
---output_file dataset 
+python -m utils.cnn_transformers_create_training_examples \
+  --file data/train_data.txt \
+  --output_file dataset 
 ```
 
+
 ```
-python train.py          
---dataset dataset.npz \   
---epochs 6 \            
---batch_size 512 
+python -m training.train_cnn_transformers \
+--dataset data/dataset.npz \
+--epochs 6 \
+--batch_size 512
 ```
 
 ## Result
