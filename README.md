@@ -34,10 +34,16 @@ The model is trained with experience replay and a target network to learn the ac
 
 ```
 python -m training.train_dqn \
---replay_capacity 100 \
---device "cuda" \
---batch_size 512 \
---num_episodes 10 
+  --replay_capacity 10000 \
+  --device cuda \
+  --batch_size 512 \
+  --num_episodes 10 \
+  --gamma 0.99 \
+  --eps_start 0.9 \
+  --eps_end 0.01 \
+  --eps_decay 2500 \
+  --tau 0.005 \
+  --lr 3e-4
 ```
 
 ## Results

@@ -1,6 +1,8 @@
 import argparse
 import math
 from itertools import count
+from tqdm import trange
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -100,8 +102,8 @@ def optimize_model(optimizer, policy_net, target_net, memory, batch_size, gamma,
     
     # Get the phi value of state_batch
     state_batch = torch.stack([phi(s, device) for s in batch.state]).to(device)
-    action_batch = torch.cat(batch.action).to(device)
-    reward_batch = torch.cat(batch.reward).to(device)
+    action_batch = torch.tensor(batch.action, dtype=torch.long, device=device).unsqueeze(1)
+    reward_batch = torch.tensor(batch.reward, dtype=torch.float32, device=device)
 
     # Compute Q(s_t, a)
     state_action_values = policy_net(state_batch).gather(1, action_batch)
@@ -135,7 +137,7 @@ def train_dqn(args):
     opt = optim.Adam(policy_net.parameters(), lr=args.lr, amsgrad=True)
     memory = ReplayMemory(args.replay_capacity)
 
-    for episode in range(args.num_episodes):
+    for episode in trange(args.num_episodes, desc="Training DQN"):
         word = word_list[random.randint(0, len(word_list) - 1)]
         state = State(word='*' * len(word), guessed_char=set(), remaining_guesses=6)
         for t in count():
@@ -171,10 +173,10 @@ def train_dqn(args):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument('--replay_capacity', default=100, type=int)
+    ap.add_argument('--replay_capacity', default=10000, type=int)
     ap.add_argument('--batch_size', default=128, type=int)
     ap.add_argument('--device', default='cuda', type=str)
-    ap.add_argument('--num_episodes', default=1000, type=int)
+    ap.add_argument('--num_episodes', default=10000, type=int)
     ap.add_argument('--gamma', default=0.99, type=float)
     ap.add_argument('--eps_start', default=0.9, type=float)
     ap.add_argument('--eps_end', default=0.01, type=float)
