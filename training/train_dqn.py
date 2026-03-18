@@ -1,4 +1,5 @@
 import argparse
+import os
 import math
 from itertools import count
 from tqdm import trange
@@ -163,6 +164,8 @@ def train_dqn(args):
                 break
         
     # Save the trained model
+    # Create the folder if not exists yet
+    os.makedirs('model/checkpoint', exist_ok=True)
 
     checkpoint = f'model/checkpoint/dqn_checkpoint.pt'
     torch.save(policy_net.state_dict(), checkpoint)

@@ -1,3 +1,5 @@
+import os
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -75,6 +77,8 @@ def train_model(args):
         print(f'Epoch {epoch+1}/{args.epochs} - acc={acc:.4%}, loss={loss:.4f}, time={dt:.2f}s')
 
         # Save the model checkpoint
+        # create the folder if not exists yet
+        os.makedirs('model/checkpoint', exist_ok=True)
         checkpoint = f'model/checkpoint/cnn_transformers_checkpoint_epoch_{epoch+1}.pt'
         torch.save(model.state_dict(), checkpoint)
         print(f'Model checkpoint saved to {checkpoint}')
