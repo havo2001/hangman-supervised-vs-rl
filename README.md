@@ -43,9 +43,24 @@ python -m training.train_dqn \
   --eps_end 0.01 \
   --eps_decay 2500 \
   --tau 0.005 \
-  --lr 3e-4
+  --lr 3e-4 \
+  --model_checkpoint 1
 ```
 
 ## Results
-If you're interested in the results and inference process, see:
-`notebooks/hangman_solver_conv_transformer_results.ipynb`
+In order to test the model you can choose to test on a single word or on a file of test words
+
+```
+python val.py \
+  --model_type supervise \
+  --model_checkpoint 10 \
+  --device cuda \
+  --single_test_word antidisestablishmentarianism   # only test one word 
+
+
+python val.py \
+  --model_type dqn \
+  --model_checkpoint 10 \
+  --device cuda \
+  --test_file data/final_test_words.txt # only test on the test set file, you can do both
+```

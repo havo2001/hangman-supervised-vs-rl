@@ -27,7 +27,7 @@ NUM_ACTIONS = OUTPUT_SIZE = 26
 def step(state: State, action: int, correct_word: str):
     "Take an action and return the next state and reward, whether the episode is done"
     new_word = ""
-    guessed_char = state.guessed_char
+    guessed_char = set(state.guessed_char)
     guessed_char.add(ID2CHAR[action])
     reward = -1
 
@@ -61,7 +61,19 @@ def phi(state: State, device):
     guessed_char = [1 if ID2CHAR[i] in state.guessed_char else 0 for i in range(NUM_ACTIONS)]
     remaining_guesses = state.remaining_guesses
     
-    return torch.tensor(word + guessed_char + [remaining_guesses], dtype=torch.float32).to(device)
+    # return torch.tensor(word + guessed_char + [remaining_guesses], dtype=torch.float32).to(device)
+    return (torch.tensor(word, dtype=torch.long).to(device), \
+        torch.tensor(guessed_char, dtype=torch.float32).to(device), \
+        torch.tensor([remaining_guesses], dtype=torch.float32).to(device))
+
+
+def batch_phi(states, device):
+    words, guessed, remaining = zip(*(phi(s, device) for s in states))
+    return (
+        torch.stack(words, dim=0),
+        torch.stack(guessed, dim=0),
+        torch.stack(remaining, dim=0)
+    )
 
 
 def select_action(policy_net, state, steps_done, eps_start, eps_end, eps_decay, device) -> int:
@@ -76,7 +88,7 @@ def select_action(policy_net, state, steps_done, eps_start, eps_end, eps_decay, 
                 return action
     else:
         with torch.no_grad():
-            q_values = policy_net(phi(state, device).unsqueeze(0))
+            q_values = policy_net(*phi(state, device))
             # Mask out already guessed characters by setting their Q-values to -inf
             for guessed in state.guessed_char:
                 q_values[0, CHAR2ID[guessed]] = float('-inf')
@@ -95,22 +107,22 @@ def optimize_model(optimizer, policy_net, target_net, memory, batch_size, gamma,
     non_final_mask = torch.tensor(tuple(map(lambda s: s is not None, batch.next_state)), 
                                   device=device, dtype=torch.bool)
     
-    non_final_next_states_list = [phi(s, device) for s in batch.next_state if s is not None]
+    non_final_next_states_list = [s for s in batch.next_state if s is not None]
     if non_final_next_states_list:
-        non_final_next_states = torch.stack(non_final_next_states_list).to(device)
+        non_final_next_states = batch_phi(non_final_next_states_list, device)
     else:
         non_final_next_states = None
     
     # Get the phi value of state_batch
-    state_batch = torch.stack([phi(s, device) for s in batch.state]).to(device)
+    state_batch = batch_phi(batch.state, device)
     action_batch = torch.tensor(batch.action, dtype=torch.long, device=device).unsqueeze(1)
     reward_batch = torch.tensor(batch.reward, dtype=torch.float32, device=device)
 
     # Compute Q(s_t, a)
-    state_action_values = policy_net(state_batch).gather(1, action_batch)
+    state_action_values = policy_net(*state_batch).gather(1, action_batch)
     next_state_values = torch.zeros(batch_size, device=device)
     with torch.no_grad():
-        next_state_values[non_final_mask] = target_net(non_final_next_states).max(1).values
+        next_state_values[non_final_mask] = target_net(*non_final_next_states).max(1).values
 
     # Compute the expected Q values
     expected_state_action_values = (next_state_values * gamma) + reward_batch
@@ -131,8 +143,10 @@ def train_dqn(args):
         word_list = [line.strip() for line in f]
 
     # They start identical
-    policy_net = DQN(INPUT_SIZE, OUTPUT_SIZE).to(args.device)
-    target_net = DQN(INPUT_SIZE, OUTPUT_SIZE).to(args.device)
+    # policy_net = DQN(INPUT_SIZE, OUTPUT_SIZE).to(args.device)
+    # target_net = DQN(INPUT_SIZE, OUTPUT_SIZE).to(args.device)
+    policy_net = DQN().to(args.device)
+    target_net = DQN().to(args.device)
     target_net.load_state_dict(policy_net.state_dict())
 
     opt = optim.Adam(policy_net.parameters(), lr=args.lr, amsgrad=True)
@@ -167,7 +181,7 @@ def train_dqn(args):
     # Create the folder if not exists yet
     os.makedirs('model/checkpoint', exist_ok=True)
 
-    checkpoint = f'model/checkpoint/dqn_checkpoint.pt'
+    checkpoint = f'model/checkpoint/dqn_checkpoint_{args.model_checkpoint}.pt'
     torch.save(policy_net.state_dict(), checkpoint)
     print(f'Model checkpoint saved to {checkpoint}')
 
@@ -186,6 +200,7 @@ if __name__ == "__main__":
     ap.add_argument('--eps_decay', default=2500, type=int)
     ap.add_argument('--tau', default=0.005, type=float)
     ap.add_argument('--lr', default=3e-4, type=float) 
+    ap.add_argument('--model_checkpoint', default=1, type=str)
     args = ap.parse_args()
 
     train_dqn(args)

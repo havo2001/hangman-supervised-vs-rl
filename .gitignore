@@ -8,3 +8,7 @@ __pycache__/
 .DS_Store
 
 model/checkpoint/
+
+create_val.py
+
+notebooks/
