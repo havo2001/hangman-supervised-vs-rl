@@ -1,3 +1,4 @@
+from collections import deque
 import argparse
 import os
 import math
@@ -9,6 +10,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from model.model_dqn import *
+
 
 # Here / for padding, * for missing character
 ALPHABET = 'abcdefghijklmnopqrstuvwxyz*/'
@@ -34,7 +36,7 @@ def step(state: State, action: int, correct_word: str):
     for i, ch in enumerate(correct_word):
         # if we guessed the correct character, reveal it in the new word
         if ID2CHAR[action] == ch:
-            reward = 1
+            reward += 1 # reward will be proportional to the number of correct positions
             new_word += ch
         else:
             new_word += state.word[i]
@@ -137,10 +139,49 @@ def optimize_model(optimizer, policy_net, target_net, memory, batch_size, gamma,
     optimizer.step()
 
 
+def eval_dqn(policy_net, device, val_word_list, max_wrong_guesses=6):
+    total_correct = 0
+    for word in val_word_list:
+        word_ids = {}
+        for i, c in enumerate(word):
+            if c not in word_ids:
+                word_ids[c] = []
+            word_ids[c].append(i)
+
+        guessed_chars = set()
+        encoded_word = '*' * len(word)
+        num_guesses = 0
+
+        while encoded_word != word and num_guesses < max_wrong_guesses:
+            state = State(word=encoded_word, guessed_char=guessed_chars, remaining_guesses=max_wrong_guesses-num_guesses)
+            with torch.no_grad():
+                q_values = policy_net(*phi(state, device))
+                for guessed in guessed_chars:
+                    q_values[0, CHAR2ID[guessed]] = float('-inf')
+                final_idx = q_values.argmax(dim=1).item()
+                final_chr = ID2CHAR[final_idx]
+            
+            if final_chr in word:
+                for idx in word_ids[final_chr]:
+                    encoded_word = encoded_word[:idx] + final_chr + encoded_word[idx + 1:]
+            else:
+                num_guesses += 1
+            guessed_chars.add(final_chr)
+
+        if encoded_word == word:
+            total_correct += 1
+        
+    return total_correct / len(val_word_list)
+
+
 def train_dqn(args):
     # Load the word list
     with open('data/train_data.txt', 'r') as f:
         word_list = [line.strip() for line in f]
+
+    # load the validation word list
+    with open('data/val.txt', 'r') as f:
+        val_word_list = [line.strip() for line in f]
 
     # They start identical
     # policy_net = DQN(INPUT_SIZE, OUTPUT_SIZE).to(args.device)
@@ -152,18 +193,23 @@ def train_dqn(args):
     opt = optim.Adam(policy_net.parameters(), lr=args.lr, amsgrad=True)
     memory = ReplayMemory(args.replay_capacity)
 
+    window_size = 100
+    recent_rewards = deque(maxlen=window_size)
+
     for episode in trange(args.num_episodes, desc="Training DQN"):
         word = word_list[random.randint(0, len(word_list) - 1)]
         state = State(word='*' * len(word), guessed_char=set(), remaining_guesses=6)
+        total_reward = 0
         for t in count():
             action = select_action(policy_net, state, episode, args.eps_start, args.eps_end, args.eps_decay, args.device)
             next_state, reward, terminated = step(state, action, word)
+
+            total_reward += reward
 
             if terminated:
                 next_state = None
             
             memory.push(state, action, reward, next_state)
-            state = next_state
 
             optimize_model(opt, policy_net, target_net, memory, args.batch_size, args.gamma, args.device)
 
@@ -176,7 +222,28 @@ def train_dqn(args):
 
             if terminated:
                 break
-        
+
+            state = next_state
+
+        recent_rewards.append(total_reward)
+
+        if (episode + 1) % 1000 == 0:
+            print('Episode: ', episode)
+            # Update the win rate and reward
+            average_reward = sum(recent_rewards) / len(recent_rewards)
+            print(f'Average reward: {average_reward}')
+
+            # Compute the win rate
+            win_rate = eval_dqn(policy_net, args.device, val_word_list)
+            print(f'Win rate: {win_rate}')
+            print('--------------------------------')
+
+            # save some progress checkpoints too
+            os.makedirs('model/checkpoint', exist_ok=True)
+            checkpoint = f'model/checkpoint/dqn_checkpoint_{args.model_checkpoint}_{episode+1}.pt'
+            torch.save(policy_net.state_dict(), checkpoint)
+            print(f'Temporaty model checkpoint saved to {checkpoint}')
+           
     # Save the trained model
     # Create the folder if not exists yet
     os.makedirs('model/checkpoint', exist_ok=True)
